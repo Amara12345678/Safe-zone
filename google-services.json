@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "241108656188",
+    "project_id": "safesignal-a9130",
+    "storage_bucket": "safesignal-a9130.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:241108656188:android:1c87b698ffb8fd7683e339",
+        "android_client_info": {
+          "package_name": "com.safesignal.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAKg-309OfC_eex9ue2Bk0J77W8l9hQk6s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
