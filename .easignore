@@ -1,0 +1,9 @@
+# Ignore local native folders to avoid OneDrive sync locks
+android/
+ios/
+node_modules/
+.expo/
+*.log
+eas-log-*
+latest-logs*
+package-lock.json
