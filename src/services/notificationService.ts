@@ -112,6 +112,51 @@ export async function playAlarmSound() {
   }
 }
 
+export async function playRingtoneSound() {
+  if (isLoadingSound) return;
+  isLoadingSound = true;
+  isStopRequested = false;
+
+  try {
+    if (alarmSound) {
+      try {
+        await alarmSound.stopAsync();
+        await alarmSound.unloadAsync();
+      } catch (e) { /* ignore */ }
+      alarmSound = null;
+    }
+
+    await Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: true,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+    });
+
+    const soundFile = Platform.OS === 'ios'
+      ? require('../../assets/sounds/iphone_ringtone.mp3')
+      : require('../../assets/sounds/android_ringtone.mp3');
+
+    const { sound } = await Audio.Sound.createAsync(
+      soundFile,
+      { shouldPlay: false, isLooping: true, volume: 1.0 }
+    );
+    
+    if (isStopRequested) {
+      await sound.unloadAsync();
+      return;
+    }
+
+    alarmSound = sound;
+    await alarmSound.playAsync();
+    console.log("[DEBUG] Started playing ringtone (looped).");
+  } catch (error) {
+    console.error("[DEBUG] Error playing ringtone:", error);
+  } finally {
+    isLoadingSound = false;
+  }
+}
+
 export async function stopAlarmSound() {
   try {
     isStopRequested = true; // Signals any loading sounds to abort

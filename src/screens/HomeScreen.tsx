@@ -22,7 +22,8 @@ import {
   sendImmediateTestNotification,
   triggerFakeCallNotification,
   startVibration,
-  stopVibration
+  stopVibration,
+  playRingtoneSound
 } from '../services/notificationService';
 
 const SAFETY_TIPS = [
@@ -113,7 +114,7 @@ export default function HomeScreen() {
         } else if (data?.type === 'fake-call') {
           setFakeCaller(data.caller as string || 'Unknown');
           setIsFakeCallIncoming(true);
-          playAlarmSound(); 
+          playRingtoneSound(); 
           startVibration('call');
         }
       });
