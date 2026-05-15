@@ -82,3 +82,28 @@ eas build --profile development --platform android
 npx expo start
 ```
 гэж ажиллуулаад гарч ирсэн QR кодыг утсаараа (Expo Go биш, өөрийнхөө сая татаж суулгасан Development Build апп дотроос камер нээж) уншуулж холбогдоно.
+
+---
+
+## 🚀 4. App Store болон Play Store-д байршуулах (Publishing)
+
+Энэхүү аппликейшн нь **Expo Application Services (EAS)** ашиглан Apple App Store болон Google Play Store-д шууд байршуулах (submit хийх) бүрэн боломжтой.
+
+### 4.1 EAS Submit ашиглах
+EAS нь таны үүсгэсэн (build хийсэн) файлыг дэлгүүрүүд рүү автоматаар илгээх хялбар шийдлийг санал болгодог. Үүний тулд:
+
+```bash
+# Play Store-д байршуулах
+eas submit -p android
+
+# App Store-д байршуулах
+eas submit -p ios
+```
+
+### 4.2 Шаардлагатай зүйлс
+Дэлгүүрт албан ёсоор байршуулахын тулд дараах зүйлс шаардлагатай:
+1. **Хөгжүүлэгчийн эрх**: Apple Developer Account (iOS) болон Google Play Developer Account (Android) нээсэн байх.
+2. **Сертификатууд**: EAS Build ашиглан Production build хийх үед автоматаар үүсэх сертификатуудыг (keystore, provisioning profile) ашиглах эсвэл өөрийнхийгөө оруулах.
+3. **Тохиргоо**: `app.json` файл дотор `bundleIdentifier` (iOS) болон `package` (Android) нэршил, хувилбарын дугаар зөв тохируулагдсан байх.
+
+Дэлгэрэнгүй зааврыг [Expo EAS Submit албан ёсны баримт](https://docs.expo.dev/submit/introduction/)-аас харах боломжтой.
