@@ -265,8 +265,8 @@ export async function scheduleCheckinReminder(scheduleTime: string) {
     const targetDate = getNextOccurrenceDate(scheduleTime);
     const id = await Notifications.scheduleNotificationAsync({
       content: {
-        title: "⏰ ЧЕКИН ХИЙХ ЦАГ! (ALARM)",
-        body: `Таны Чекин хийх цаг 1 минут өнгөрлөө (${scheduleTime})! Яаралтай SAFE дарна уу.`,
+        title: "⏰ АЮУЛГҮЙ ТОВЧ ДАРАХ ЦАГ! (ALARM)",
+        body: `Аюулгүй товч дарах цаг 1 минут өнгөрлөө (${scheduleTime})! Яаралтай АЮУЛГҮЙ БАЙНА дарна уу.`,
         sound: true,
         priority: Notifications.AndroidNotificationPriority.MAX,
         sticky: true,

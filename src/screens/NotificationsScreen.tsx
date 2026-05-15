@@ -5,9 +5,11 @@ import { ShieldAlert, CheckCircle2, User, AlertTriangle, MapPin } from 'lucide-r
 import firestore from '@react-native-firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { verifyMissedCheckins } from '../services/checkinService';
+import { translations } from '../utils/translations';
 
 export default function NotificationsScreen() {
-  const { userData } = useAuth();
+  const { userData, language } = useAuth();
+  const t = translations[language];
   const [alerts, setAlerts] = React.useState<any[]>([]);
 
   React.useEffect(() => {
@@ -78,7 +80,7 @@ export default function NotificationsScreen() {
                 id: documentSnapshot.id,
                 ...data,
                 sortTime: alertDate.getTime(),
-                time: data.timestamp ? alertDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Дөнгөж сая'
+                time: data.timestamp ? alertDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : t.justNow
               });
             }
           });
@@ -99,7 +101,7 @@ export default function NotificationsScreen() {
       </View>
       <View style={styles.contentContainer}>
         <View style={styles.headerInfo}>
-          <Text style={styles.userName}>{item.userName || 'Нэргүй'} <Text style={styles.userStatus}>• {item.userStatus || 'Гишүүн'}</Text></Text>
+          <Text style={styles.userName}>{item.userName || t.unknownName} <Text style={styles.userStatus}>• {item.userStatus || t.member}</Text></Text>
           <Text style={styles.time}>{item.time}</Text>
         </View>
         <View style={[styles.messageBox, { backgroundColor: item.type === 'safe' ? '#f0fdf4' : '#fef2f2' }]}>
@@ -118,7 +120,7 @@ export default function NotificationsScreen() {
               }}
             >
               <MapPin color="#2563eb" size={16} style={{marginRight: 6}} />
-              <Text style={styles.locationText}>Байршил харах</Text>
+              <Text style={styles.locationText}>{t.viewLocation}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -129,14 +131,14 @@ export default function NotificationsScreen() {
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Сүүлийн үйл явдлууд</Text>
+        <Text style={styles.headerTitle}>{t.recentEvents}</Text>
       </View>
       <FlatList
         data={alerts}
         renderItem={renderItem}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
-        ListEmptyComponent={<Text style={{textAlign: 'center', marginTop: 20, color: 'gray'}}>Одоогоор ямар нэгэн мэдэгдэл алга байна.</Text>}
+        ListEmptyComponent={<Text style={{textAlign: 'center', marginTop: 20, color: 'gray'}}>{t.noNotifications}</Text>}
       />
     </SafeAreaView>
   );

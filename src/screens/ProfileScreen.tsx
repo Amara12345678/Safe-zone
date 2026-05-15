@@ -3,15 +3,18 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, Modal, TextInput, Scro
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getAuth, signOut } from '@react-native-firebase/auth';
-import { LogOut, Clock, Users, Edit2, Plus, X } from 'lucide-react-native';
+import { LogOut, Clock, Users, Edit2, Plus, X, UserX } from 'lucide-react-native';
+import firestore from '@react-native-firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { updateCheckinSchedule, joinFamily, updateUserProfile } from '../services/userService';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { scheduleWeeklyReminders } from '../services/notificationService';
+import { translations } from '../utils/translations';
 
 export default function ProfileScreen() {
   const navigation = useNavigation<any>();
-  const { user, userData, refreshUserData } = useAuth();
+  const { user, userData, refreshUserData, language } = useAuth();
+  const t = translations[language];
   
   const [showPicker, setShowPicker] = useState(false);
   const [editingIndex, setEditingIndex] = useState(0);
@@ -56,7 +59,7 @@ export default function ProfileScreen() {
         await scheduleWeeklyReminders(newSchedule);
         
         await refreshUserData();
-        Alert.alert("Амжилттай", "Чекин хийх цагийг шинэчиллээ.");
+        Alert.alert("Амжилттай", "Аюулгүй товч дарах цагийг шинэчиллээ.");
       } catch (e: any) {
         Alert.alert("Алдаа", "Хадгалахад алдаа гарлаа: " + e.message);
       }
@@ -108,12 +111,12 @@ export default function ProfileScreen() {
 
   const handleLogout = () => {
     Alert.alert(
-      "Системээс гарах", 
-      "Та үнэхээр гарахдаа итгэлтэй байна уу?", 
+      t.logout, 
+      t.logoutConfirm, 
       [
-        { text: "Үгүй", style: "cancel" },
+        { text: t.logoutNo, style: "cancel" },
         { 
-          text: "Гарах", 
+          text: t.logoutYes, 
           style: "destructive",
           onPress: async () => {
             await signOut(getAuth());
@@ -128,8 +131,8 @@ export default function ProfileScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} bounces={true}>
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.title}>Профайл</Text>
-            <Text style={styles.subtitle}>{userData?.name || 'Нэргүй'} • {userData?.status || 'Гишүүн'}</Text>
+            <Text style={styles.title}>{t.profile}</Text>
+            <Text style={styles.subtitle}>{userData?.name || t.unknownName} • {userData?.status || t.member}</Text>
           </View>
           <TouchableOpacity onPress={handleEditProfile} style={styles.editIconBtn}>
             <Edit2 color="#2563eb" size={24} />
@@ -143,8 +146,8 @@ export default function ProfileScreen() {
                 <Plus color="#16a34a" size={24} />
               </View>
               <View>
-                <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#1a365d' }}>Гэр бүл үүсгэх</Text>
-                <Text style={{ fontSize: 13, color: '#64748b' }}>Шинэ гишүүн урих код авах</Text>
+                <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#1a365d' }}>{t.createFamily}</Text>
+                <Text style={{ fontSize: 13, color: '#64748b' }}>{t.createFamilySub}</Text>
               </View>
             </View>
             <Text style={{ fontSize: 24, color: '#cbd5e1' }}>›</Text>
@@ -158,8 +161,8 @@ export default function ProfileScreen() {
                 <Users color="#2563eb" size={24} />
               </View>
               <View>
-                <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#1a365d' }}>Миний Гэр бүл</Text>
-                <Text style={{ fontSize: 13, color: '#64748b' }}>Гэр бүлийн гишүүдээ харах</Text>
+                <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#1a365d' }}>{t.myFamily}</Text>
+                <Text style={{ fontSize: 13, color: '#64748b' }}>{t.myFamilySub}</Text>
               </View>
             </View>
             <Text style={{ fontSize: 24, color: '#cbd5e1' }}>›</Text>
@@ -167,13 +170,13 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Өөр гэр бүлд нэгдэх</Text>
-          <Text style={styles.helperText}>Урилгын кодоо доор бичээд гэр бүлдээ нэгдээрэй.</Text>
+          <Text style={styles.cardTitle}>{t.joinFamily}</Text>
+          <Text style={styles.helperText}>{t.joinFamilyHelper}</Text>
           
           <View style={styles.joinForm}>
             <TextInput
               style={styles.joinInput}
-              placeholder="Код оруулах (Жнь: SGNL-XX)"
+              placeholder={t.enterCodeStr}
               value={joinCode}
               onChangeText={setJoinCode}
               autoCapitalize="characters"
@@ -185,14 +188,14 @@ export default function ProfileScreen() {
               disabled={isJoining}
             >
               <Users color="white" size={18} />
-              <Text style={styles.joinButtonText}>Нэгдэх</Text>
+              <Text style={styles.joinButtonText}>{t.joinBtn}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Чекин (Safe) хийх цагууд</Text>
-          <Text style={styles.helperText}>Эдгээр цагуудад танд Чекин хийх сануулга очих бөгөөд 10 минут хоцорвол гэр бүлийнхэнд тань анхааруулна.</Text>
+          <Text style={styles.cardTitle}>{t.checkinScheduleTitle}</Text>
+          <Text style={styles.helperText}>{t.checkinScheduleHelper}</Text>
           
           <View style={styles.timeRowContainer}>
             {schedule.map((time, idx) => (
@@ -230,19 +233,19 @@ export default function ProfileScreen() {
         <Modal visible={showEditModal} transparent={true} animationType="slide">
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Мэдээлэл засах</Text>
+              <Text style={styles.modalTitle}>{t.editProfileTitle}</Text>
               
               {!showEditStatusOptions ? (
                 <View style={{width: '100%'}}>
-                  <Text style={styles.inputLabel}>Таны нэр</Text>
+                  <Text style={styles.inputLabel}>{t.yourName}</Text>
                   <TextInput 
                     style={styles.fullInput}
                     value={editName}
                     onChangeText={setEditName}
-                    placeholder="Нэрээ оруулна уу"
+                    placeholder={t.enterName}
                   />
                   
-                  <Text style={styles.inputLabel}>Гэр бүлийн статус</Text>
+                  <Text style={styles.inputLabel}>{t.familyStatusField}</Text>
                   <TouchableOpacity 
                     style={styles.fullInput}
                     onPress={() => setShowEditStatusOptions(true)}
@@ -252,16 +255,16 @@ export default function ProfileScreen() {
 
                   <View style={[styles.modalBtns, {marginTop: 20}]}>
                     <TouchableOpacity onPress={() => setShowEditModal(false)}>
-                      <Text style={styles.modalCancel}>Цуцлах</Text>
+                      <Text style={styles.modalCancel}>{t.cancel}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={saveProfileEdit} disabled={isSaving}>
-                      <Text style={styles.modalOk}>{isSaving ? 'Уншиж байна...' : 'Хадгалах'}</Text>
+                      <Text style={styles.modalOk}>{isSaving ? t.loading : t.save}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
               ) : (
                 <View style={{width: '100%'}}>
-                  <Text style={styles.modalSub}>Статусаа сонгоно уу</Text>
+                  <Text style={styles.modalSub}>{t.selectStatus}</Text>
                   <ScrollView style={{maxHeight: 200, width: '100%'}}>
                     {statuses.map((s, idx) => (
                       <TouchableOpacity 
@@ -290,26 +293,28 @@ export default function ProfileScreen() {
                 <X color="#64748b" size={24} />
               </TouchableOpacity>
               
-              <Text style={[styles.cardTitle, { fontSize: 20 }]}>Таны урилгын код</Text>
-              <Text style={[styles.inviteCode, { fontSize: 40 }]}>{userData?.familyCode || 'УНШИЖ БАЙНА...'}</Text>
+              <Text style={[styles.cardTitle, { fontSize: 20 }]}>{t.inviteCodeTitle}</Text>
+              <Text style={[styles.inviteCode, { fontSize: 40 }]}>{userData?.familyCode || t.loading}</Text>
               <Text style={[styles.helperText, { paddingHorizontal: 20 }]}>
-                Энэхүү кодыг гэр бүлийнхэндээ илгээснээр тэд тантай нэг сүлжээнд нэгдэж, аюулгүйн хүрээлэл тань томорно.
+                {t.inviteCodeHelper}
               </Text>
               
               <TouchableOpacity 
                 style={[styles.joinButton, { width: '80%', marginTop: 30 }]} 
                 onPress={() => setShowInviteModal(false)}
               >
-                <Text style={styles.joinButtonText}>Ойлголоо</Text>
+                <Text style={styles.joinButtonText}>{t.understood}</Text>
               </TouchableOpacity>
             </View>
           </View>
         </Modal>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <LogOut color="#ef4444" size={20} />
-          <Text style={styles.logoutText}>Системээс гарах</Text>
-        </TouchableOpacity>
+        <View style={styles.bottomButtonsContainer}>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <LogOut color="#ef4444" size={20} />
+            <Text style={styles.logoutText}>{t.logout}</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -323,7 +328,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 20,
     flexGrow: 1,
-    paddingBottom: 40,
+    paddingBottom: 100,
   },
   title: {
     fontSize: 28,
@@ -376,6 +381,12 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontSize: 14,
   },
+  bottomButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+    width: '100%',
+  },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -383,7 +394,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fee2e2',
     padding: 16,
     borderRadius: 16,
-    marginTop: 20, // Replaced marginTop: 'auto' so it plays nicely below cards in scroll
+    flex: 1,
   },
   logoutText: {
     color: '#ef4444',

@@ -11,6 +11,7 @@ export interface UserContextData {
   expoPushToken: string | null;
   awards: string[];
   checkinSchedule?: string[];
+  points?: number;
 }
 
 interface AuthContextType {
@@ -18,6 +19,8 @@ interface AuthContextType {
   userData: UserContextData | null;
   isInitializing: boolean;
   refreshUserData: () => Promise<void>;
+  language: 'MN' | 'EN';
+  setLanguage: React.Dispatch<React.SetStateAction<'MN' | 'EN'>>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -25,6 +28,8 @@ const AuthContext = createContext<AuthContextType>({
   userData: null,
   isInitializing: true,
   refreshUserData: async () => {},
+  language: 'MN',
+  setLanguage: () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -33,6 +38,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
   const [userData, setUserData] = useState<UserContextData | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [language, setLanguage] = useState<'MN' | 'EN'>('MN');
 
   // Deprecated manual refresh - no longer needed as we use onSnapshot, but keeping interface for backwards compatibility.
   const refreshUserData = async (uid?: string) => {};
@@ -71,6 +77,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     awards: [],
                     expoPushToken: null,
                     checkinSchedule: ['12:00', '18:00'],
+                    points: 0,
                   };
                   await firestore().collection('users').doc(uid).set({
                     ...fallbackData,
@@ -94,7 +101,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, userData, isInitializing, refreshUserData }}>
+    <AuthContext.Provider value={{ user, userData, isInitializing, refreshUserData, language, setLanguage }}>
       {children}
     </AuthContext.Provider>
   );

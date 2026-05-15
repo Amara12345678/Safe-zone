@@ -86,6 +86,11 @@ export const logCheckin = async (userId: string, familyCode: string, scheduleTim
         await firestore().collection('users').doc(userId).update({
           lastLocation: coords,
           locationTimestamp: firestore.FieldValue.serverTimestamp(),
+          points: firestore.FieldValue.increment(1),
+        });
+      } else {
+        await firestore().collection('users').doc(userId).update({
+          points: firestore.FieldValue.increment(1),
         });
       }
     } catch (alertError) {
@@ -106,7 +111,7 @@ export const logCheckin = async (userId: string, familyCode: string, scheduleTim
           to: tokens,
           sound: 'default',
           title: '✅ Аюулгүй (SAFE)',
-          body: `Гэр бүлийн гишүүн амжилттай Чекин (Safe) хийлээ. ${statusMessage ? `(${statusMessage})` : ''}`,
+          body: `Гэр бүлийн гишүүн амжилттай Аюулгүй товч дарлаа. ${statusMessage ? `(${statusMessage})` : ''}`,
         }),
       });
     }
@@ -131,6 +136,21 @@ export const getTodayCheckinsCount = async (userId: string) => {
   } catch (error) {
     console.error('Error fetching check-ins:', error);
     return 0;
+  }
+};
+
+export const hasCheckedInForSchedule = async (userId: string, date: string, scheduleTime: string) => {
+  try {
+    const existing = await firestore()
+      .collection('checkins')
+      .where('userId', '==', String(userId))
+      .where('date', '==', String(date))
+      .where('scheduleTime', '==', String(scheduleTime))
+      .get();
+    return !existing.empty;
+  } catch (error) {
+    console.error('Error checking exist check-in:', error);
+    return false;
   }
 };
 
@@ -200,12 +220,19 @@ export const verifyMissedCheckins = async (checkingUserId: string, familyCode: s
                    userStatus,
                    familyCode,
                    timestamp: firestore.FieldValue.serverTimestamp(),
-                   title: '⚠️ Чекин хоцорлоо!',
-                   message: `10 минутын дотор Чекин хийсэнгүй!! (${timeStr})`,
+                   title: '⚠️ Аюулгүй товч дарагдсангүй!',
+                   message: `10 минутын дотор Аюулгүй товч дарсангүй!! (${timeStr})`,
                    status: 'warning',
                    scheduleTime: timeStr,
                    date: today
                  });
+                 
+                 // Deduct 1 point, min 0
+                 const currentPoints = data.points || 0;
+                 await firestore().collection('users').doc(uId).update({
+                   points: Math.max(0, currentPoints - 1),
+                 });
+
                  console.log(`[DEBUG] Successfully wrote MISSED alert for user ${userName} in family ${familyCode}`);
                } catch (missedError) {
                  console.error("[DEBUG] Error writing MISSED alert:", missedError);
@@ -219,8 +246,8 @@ export const verifyMissedCheckins = async (checkingUserId: string, familyCode: s
                     body: JSON.stringify({
                       to: data.expoPushToken,
                       sound: 'default',
-                      title: '⚠️ Чекин хийнэ үү!',
-                      body: 'Таны Чекин хийх цаг 10 минут өнгөрлөө! Яаралтай SAFE дарна уу.',
+                      title: '⚠️ Аюулгүй товч дарна уу!',
+                      body: 'Аюулгүй товч дарах цаг 10 минут өнгөрлөө! Яаралтай АЮУЛГҮЙ БАЙНА дарна уу.',
                     }),
                  });
                }

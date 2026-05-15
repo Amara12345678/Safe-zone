@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import firestore from '@react-native-firebase/firestore';
 import { triggerSOS, sendTestFamilyNotification } from '../services/sosService';
 import { updateExpoPushToken } from '../services/userService';
-import { logCheckin, getTodayCheckinsCount } from '../services/checkinService';
+import { logCheckin, getTodayCheckinsCount, hasCheckedInForSchedule } from '../services/checkinService';
 import {
   checkExactAlarmPermission,
   triggerLocalSOSAlarm,
@@ -25,16 +25,14 @@ import {
   stopVibration,
   playRingtoneSound
 } from '../services/notificationService';
+import { translations } from '../utils/translations';
+import { startProtectionService, stopProtectionService } from '../services/foregroundService';
 
-const SAFETY_TIPS = [
-  { text: "Танихгүй хүнтэй ярилцаж болохгүй шүү 🛑", icon: "Shield" },
-  { text: "Гэртээ харихдаа замаа анхаараарай 🚶", icon: "MapPin" },
-  { text: "Утсаа байнга цэнэглэж байгаарай 🔋", icon: "Activity" },
-  { text: "Гэр бүлийнхэн тань таныг хамгаалж байна ❤️", icon: "HeartPulse" },
-];
+const SAFETY_TIPS_LENGTH = 4;
 
 export default function HomeScreen() {
-  const { user, userData } = useAuth();
+  const { user, userData, language, setLanguage } = useAuth();
+  const t = translations[language];
   const [loadingSOS, setLoadingSOS] = React.useState(false);
   const [loadingSafe, setLoadingSafe] = React.useState(false);
   const [checkinsCount, setCheckinsCount] = React.useState(0);
@@ -88,6 +86,16 @@ export default function HomeScreen() {
           if (userData?.checkinSchedule) {
             await scheduleWeeklyReminders(userData.checkinSchedule);
           }
+
+          // Start Android Foreground Service so the Firestore SOS listener
+          // survives even after the user swipes the app from recent apps.
+          if (Platform.OS === 'android' && userData?.familyCode) {
+            await startProtectionService(
+              user.uid,
+              userData.familyCode,
+              userData.name || 'Хэрэглэгч'
+            );
+          }
         } else if (!hasShownPermissionAlert.current) {
           hasShownPermissionAlert.current = true;
           Alert.alert(
@@ -102,7 +110,7 @@ export default function HomeScreen() {
       const subscription = Notifications.addNotificationReceivedListener(notification => {
         const data = notification.request.content.data;
         const channelId = (notification.request.content as any).android?.channelId;
-        
+
         console.log("[DEBUG] Notification Received in Foreground:", JSON.stringify(data));
         setLastEvent(`Foreground: ${JSON.stringify(data)}`);
 
@@ -114,7 +122,7 @@ export default function HomeScreen() {
         } else if (data?.type === 'fake-call') {
           setFakeCaller(data.caller as string || 'Unknown');
           setIsFakeCallIncoming(true);
-          playRingtoneSound(); 
+          playRingtoneSound();
           startVibration('call');
         }
       });
@@ -124,7 +132,7 @@ export default function HomeScreen() {
         const data = response.notification.request.content.data;
         console.log("[DEBUG] User interacted with notification:", JSON.stringify(data));
         setLastEvent(`Tapped: ${JSON.stringify(data)}`);
-        
+
         if (data?.type === 'sos') {
           console.log("[DEBUG] User tapped SOS notification, starting siren!");
           setIsAlarmSounding(true);
@@ -147,14 +155,14 @@ export default function HomeScreen() {
     if (!user || !userData?.familyCode) return;
 
     console.log(`[DEBUG] Starting Firestore Real-time SOS Sync for family: ${userData.familyCode}`);
-    
+
     const unsubscribe = firestore()
       .collection('alerts')
       .where('familyCode', '==', String(userData.familyCode))
       .where('type', '==', 'sos')
       .onSnapshot((snapshot: any) => {
         if (!snapshot) return;
-        
+
         // Define "recent" as within the last 2 minutes for tighter control
         const recentLimit = new Date();
         recentLimit.setMinutes(recentLimit.getMinutes() - 2);
@@ -176,7 +184,7 @@ export default function HomeScreen() {
             console.log(`[DEBUG] REAL-TIME SOS DETECTED via Firestore sync! AlertID: ${alertId}`);
             lastHandledAlertIdRef.current.add(alertId); // Mark as handled immediately
             setLastEvent(`Real-time SOS from: ${data.userName}`);
-            
+
             // Show immediate Local Notification so the name is visible
             Notifications.scheduleNotificationAsync({
               content: {
@@ -225,7 +233,7 @@ export default function HomeScreen() {
 
   React.useEffect(() => {
     const tipInterval = setInterval(() => {
-      setActiveTipIndex(prev => (prev + 1) % SAFETY_TIPS.length);
+      setActiveTipIndex(prev => (prev + 1) % SAFETY_TIPS_LENGTH);
     }, 8000); // Rotate every 8 seconds
 
     return () => clearInterval(tipInterval);
@@ -267,6 +275,8 @@ export default function HomeScreen() {
     setIsAlarmSounding(false);
     await stopAlarmSound();
     stopVibration();
+    // Cancel all the burst-scheduled SOS alarm notifications from the foreground service
+    await Notifications.cancelAllScheduledNotificationsAsync();
   };
 
   const emergencyStopSiren = async () => {
@@ -276,20 +286,21 @@ export default function HomeScreen() {
     setIsFakeCallConnected(false);
     await stopAlarmSound();
     stopVibration();
+    await Notifications.cancelAllScheduledNotificationsAsync();
     if (callTimerRef.current) clearInterval(callTimerRef.current);
     Alert.alert("Систем", "Бүх сэрүүлгийг хүчээр зогсоолоо.");
   };
 
   const handleTestNotification = async () => {
     if (!user || !userData?.familyCode) return;
-    
+
     Alert.alert(
       "Холболт шалгах",
       "Гэр бүлийн бусад гишүүд рүү тест мэдэгдэл илгээх үү?",
       [
         { text: "Цуцлах", style: "cancel" },
-        { 
-          text: "Илгээх", 
+        {
+          text: "Илгээх",
           onPress: async () => {
             const result = await sendTestFamilyNotification(user.uid, userData.familyCode!, userData.name || 'Нэргүй');
             if (result.success) {
@@ -333,9 +344,26 @@ export default function HomeScreen() {
     if (!isValidTime) {
       Alert.alert(
         "Буруу цаг!",
-        "Одоо Чекин хийх цаг биш байна! Та зөвхөн тохируулсан цагаасаа хойш 10 минутын дотор л Чекин (SAFE) дарах боломжтой."
+        "Одоо Аюулгүй товч дарах цаг биш байна! Та зөвхөн тохируулсан цагаасаа хойш 10 минутын дотор л АЮУЛГҮЙ БАЙНА дарах боломжтой."
       );
       return;
+    }
+
+    setLoadingSafe(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const alreadyCheckedIn = await hasCheckedInForSchedule(user.uid, today, targetSchedule);
+      if (alreadyCheckedIn) {
+        Alert.alert(
+          "Анхааруулга",
+          "Та энэ цагт Аюулгүй товчоо аль хэдийн дарсан байна. Дараагийн цаг хүртэл хугацаа болоогүй байна."
+        );
+        return;
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingSafe(false);
     }
 
     setTargetTime(targetSchedule);
@@ -344,7 +372,7 @@ export default function HomeScreen() {
 
   const confirmSafeCheckin = async (status: string) => {
     if (!user || !userData?.familyCode) return;
-    
+
     setIsStatusModalVisible(false);
     setLoadingSafe(true);
     try {
@@ -356,9 +384,9 @@ export default function HomeScreen() {
       }
     } catch (e: any) {
       if (e.message === 'already_checked_in') {
-        Alert.alert("Анхааруулга", "Та энэ цагийн чекинээ аль хэдийн хийсэн байна.");
+        Alert.alert("Анхааруулга", "Та энэ цагт Аюулгүй товчоо аль хэдийн дарсан байна.");
       } else {
-        Alert.alert("Алдаа", "Чекин хийхэд алдаа гарлаа.");
+        Alert.alert("Алдаа", "Аюулгүй товч дарахад алдаа гарлаа.");
       }
     } finally {
       setLoadingSafe(false);
@@ -388,6 +416,33 @@ export default function HomeScreen() {
     }
   };
 
+  const userPoints = userData?.points || 0;
+  
+  let stars = 0;
+  let nextTarget = 60;
+  if (userPoints >= 120) {
+    stars = 3;
+    nextTarget = 0;
+  } else if (userPoints >= 80) {
+    stars = 2;
+    nextTarget = 120;
+  } else if (userPoints >= 60) {
+    stars = 1;
+    nextTarget = 80;
+  }
+
+  const renderStars = () => {
+    const starNodes = [];
+    for(let i = 0; i < 3; i++) {
+        starNodes.push(
+            <Text key={i} style={{fontSize: 24, marginHorizontal: 2, color: i < stars ? '#eab308' : '#e2e8f0'}}>
+                ★
+            </Text>
+        );
+    }
+    return starNodes;
+  };
+
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -408,7 +463,7 @@ export default function HomeScreen() {
               </View>
               <Text style={styles.callerNameBig}>{fakeCaller}</Text>
               <Text style={styles.callStatusText}>
-                {isFakeCallConnected ? formatTime(callSeconds) : "Дуудлага ирж байна..."}
+                {isFakeCallConnected ? formatTime(callSeconds) : t.incoming}
               </Text>
 
               <View style={styles.callActionsRow}>
@@ -422,7 +477,7 @@ export default function HomeScreen() {
                       }}
                     >
                       <PhoneOff color="white" size={32} />
-                      <Text style={styles.callBtnLabel}>Цуцлах</Text>
+                      <Text style={styles.callBtnLabel}>{t.cancel}</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -434,7 +489,7 @@ export default function HomeScreen() {
                       }}
                     >
                       <Phone color="white" size={32} />
-                      <Text style={styles.callBtnLabel}>Авах</Text>
+                      <Text style={styles.callBtnLabel}>{t.answer}</Text>
                     </TouchableOpacity>
                   </>
                 ) : (
@@ -446,7 +501,7 @@ export default function HomeScreen() {
                     }}
                   >
                     <PhoneOff color="white" size={32} />
-                    <Text style={styles.callBtnLabel}>Дуусгах</Text>
+                    <Text style={styles.callBtnLabel}>{t.end}</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -464,51 +519,51 @@ export default function HomeScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.statusPickerContent}>
               <View style={styles.statusHeader}>
-                <Text style={styles.statusTitle}>Одоо хаана байна вэ?</Text>
+                <Text style={styles.statusTitle}>{t.whereAreYou}</Text>
                 <TouchableOpacity onPress={() => setIsStatusModalVisible(false)}>
                   <X color="#64748b" size={24} />
                 </TouchableOpacity>
               </View>
-              
+
               <View style={styles.statusOptionsGrid}>
-                <TouchableOpacity 
-                  style={[styles.statusOption, {backgroundColor: '#dcfce7'}]}
-                  onPress={() => confirmSafeCheckin('Хичээл дээрээ байна')}
+                <TouchableOpacity
+                  style={[styles.statusOption, { backgroundColor: '#dcfce7' }]}
+                  onPress={() => confirmSafeCheckin(t.atSchool)}
                 >
                   <Text style={styles.statusEmoji}>🏫</Text>
-                  <Text style={styles.statusOptionText}>Хичээл дээр</Text>
+                  <Text style={styles.statusOptionText}>{t.atSchool}</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity 
-                  style={[styles.statusOption, {backgroundColor: '#e0f2fe'}]}
-                  onPress={() => confirmSafeCheckin('Ажил дээрээ байна')}
+                <TouchableOpacity
+                  style={[styles.statusOption, { backgroundColor: '#e0f2fe' }]}
+                  onPress={() => confirmSafeCheckin(t.atWork)}
                 >
                   <Text style={styles.statusEmoji}>💼</Text>
-                  <Text style={styles.statusOptionText}>Ажил дээр</Text>
+                  <Text style={styles.statusOptionText}>{t.atWork}</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity 
-                  style={[styles.statusOption, {backgroundColor: '#fef3c7'}]}
-                  onPress={() => confirmSafeCheckin('Гэр рүүгээ явж байна')}
+                <TouchableOpacity
+                  style={[styles.statusOption, { backgroundColor: '#fef3c7' }]}
+                  onPress={() => confirmSafeCheckin(t.goingHome)}
                 >
                   <Text style={styles.statusEmoji}>🏠</Text>
-                  <Text style={styles.statusOptionText}>Гэр рүүгээ</Text>
+                  <Text style={styles.statusOptionText}>{t.goingHome}</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity 
-                  style={[styles.statusOption, {backgroundColor: '#f1f5f9'}]}
-                  onPress={() => confirmSafeCheckin('Замдаа явж байна')}
+                <TouchableOpacity
+                  style={[styles.statusOption, { backgroundColor: '#f1f5f9' }]}
+                  onPress={() => confirmSafeCheckin(t.onTheWay)}
                 >
                   <Text style={styles.statusEmoji}>🚶</Text>
-                  <Text style={styles.statusOptionText}>Замдаа</Text>
+                  <Text style={styles.statusOptionText}>{t.onTheWay}</Text>
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.simpleSafeBtn}
-                onPress={() => confirmSafeCheckin('Аюулгүй (SAFE)')}
+                onPress={() => confirmSafeCheckin(t.justSafe)}
               >
-                <Text style={styles.simpleSafeText}>Зүгээр л SAFE</Text>
+                <Text style={styles.simpleSafeText}>{t.justSafe}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -519,14 +574,14 @@ export default function HomeScreen() {
           <View style={styles.alarmActiveBanner}>
             <Activity color="white" size={32} />
             <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.alarmBannerTitle}>🆘 SOS ДОХИО ИРЛЭЭ!</Text>
-              <Text style={styles.alarmBannerText}>Сэрүүлэг дуугарч байна...</Text>
+              <Text style={styles.alarmBannerTitle}>{t.sosAlert}</Text>
+              <Text style={styles.alarmBannerText}>{t.alarmSounding}</Text>
             </View>
             <TouchableOpacity
               style={styles.stopAlarmButton}
               onPress={handleStopSiren}
             >
-              <Text style={styles.stopAlarmText}>ЗОГСООХ</Text>
+              <Text style={styles.stopAlarmText}>{t.stop}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -544,34 +599,18 @@ export default function HomeScreen() {
 
           <View style={styles.logoContainer}>
             <Shield color="#0052cc" size={24} fill="#0052cc" />
-            <Text style={styles.logoText}>SAFEZONE</Text>
+            <Text style={styles.logoText}>SAFESIGNAL</Text>
           </View>
 
-          <TouchableOpacity style={styles.bellContainer}>
-            <Bell color="#4a5568" size={28} />
-            <View style={styles.notificationBadge}>
-              <Text style={styles.notificationText}>2</Text>
-            </View>
+          <TouchableOpacity
+            style={styles.languageToggle}
+            onPress={() => setLanguage(prev => prev === 'MN' ? 'EN' : 'MN')}
+          >
+            <Text style={styles.languageToggleText}>{language === 'MN' ? 'EN' : 'MN'}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Info Banner */}
-        <View style={styles.bannerOuter}>
-          <LinearGradient
-            colors={['#e0f2fe', '#f0f9ff']}
-            style={styles.bannerInner}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-          >
-            <View style={styles.bannerIconBox}>
-              <Shield color="#0052cc" size={24} />
-            </View>
-            <View style={styles.bannerTextBox}>
-              <Text style={styles.bannerStatusLabel}>Гэр бүлийн төлөв: АЮУЛГҮЙ</Text>
-              <Text style={styles.bannerTipText}>{SAFETY_TIPS[activeTipIndex].text}</Text>
-            </View>
-          </LinearGradient>
-        </View>
+
 
         {/* SAFE Button */}
         <TouchableOpacity
@@ -585,8 +624,8 @@ export default function HomeScreen() {
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
           >
-            <Text style={styles.safeTitle}>{loadingSafe ? "УНШИЖ БАЙНА..." : "SAFE"}</Text>
-            <Text style={styles.safeSubtitle}>Tap to check in</Text>
+            <Text style={styles.safeTitle}>{loadingSafe ? t.loadingSafe : t.safeCheckIn}</Text>
+            <Text style={styles.safeSubtitle}>{t.checkInSub}</Text>
           </LinearGradient>
         </TouchableOpacity>
 
@@ -604,9 +643,9 @@ export default function HomeScreen() {
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
           >
-            <Text style={styles.sosTitle}>{loadingSOS ? "ИЛГЭЭЖ БАЙНА..." : "SOS"}</Text>
-            {!loadingSOS && <Text style={styles.sosHoldText}>(Hold 3 Sec)</Text>}
-            <Text style={styles.sosSubtitle}>Tap to send alert</Text>
+            <Text style={styles.sosTitle}>{loadingSOS ? t.sending : t.sos}</Text>
+            {!loadingSOS && <Text style={styles.sosHoldText}>{t.hold3Sec}</Text>}
+            <Text style={styles.sosSubtitle}>{t.sosSub}</Text>
           </LinearGradient>
         </TouchableOpacity>
 
@@ -619,7 +658,7 @@ export default function HomeScreen() {
             end={{ x: 0, y: 1 }}
           >
             <PhoneCall color="white" size={20} style={{ marginRight: 8 }} />
-            <Text style={styles.fakeCallText}>Fake Call</Text>
+            <Text style={styles.fakeCallText}>{t.fakeCall}</Text>
           </LinearGradient>
         </TouchableOpacity>
 
@@ -631,13 +670,13 @@ export default function HomeScreen() {
           >
             <View style={[styles.emergencyIconBox, { borderColor: '#ef4444', borderWidth: 1 }]}>
               <Image
-                source={require('../../assets/images/icons/ambulance.png')}
+                source={require('../../assets/images/icons/ambulance.jpg')}
                 style={styles.vehicleIcon}
                 resizeMode="contain"
               />
             </View>
             <Text style={styles.emergencyNumber}>103</Text>
-            <Text style={styles.emergencyText}>Түргэн</Text>
+            <Text style={styles.emergencyText}>{t.ambulance}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -646,13 +685,13 @@ export default function HomeScreen() {
           >
             <View style={[styles.emergencyIconBox, { borderColor: '#2563eb', borderWidth: 1 }]}>
               <Image
-                source={require('../../assets/images/icons/police.png')}
+                source={require('../../assets/images/icons/police.jpg')}
                 style={styles.vehicleIcon}
                 resizeMode="contain"
               />
             </View>
             <Text style={styles.emergencyNumber}>102</Text>
-            <Text style={styles.emergencyText}>Цагдаа</Text>
+            <Text style={styles.emergencyText}>{t.police}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -661,102 +700,62 @@ export default function HomeScreen() {
           >
             <View style={[styles.emergencyIconBox, { borderColor: '#f97316', borderWidth: 1 }]}>
               <Image
-                source={require('../../assets/images/icons/fire.png')}
+                source={require('../../assets/images/icons/fire.jpg')}
                 style={styles.vehicleIcon}
                 resizeMode="contain"
               />
             </View>
             <Text style={styles.emergencyNumber}>101</Text>
-            <Text style={styles.emergencyText}>Гал түймэр</Text>
+            <Text style={styles.emergencyText}>{t.fireDept}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Diagnostic Buttons */}
-        <TouchableOpacity 
-          style={styles.testButton}
-          onPress={handleTestNotification}
-        >
-          <Bell color="#2563eb" size={20} />
-          <Text style={styles.testButtonText}>Гэр бүлийн холболт шалгах</Text>
-        </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.testButton}
-          onPress={sendImmediateTestNotification}
-        >
-          <Bell color="#2563eb" size={20} />
-          <Text style={styles.testButtonText}>Миний утас (Local Test)</Text>
-        </TouchableOpacity>
 
-        {/* SOS Alarm Test Button */}
-        <TouchableOpacity
-          style={styles.sosTestButton}
-          onPress={async () => {
-            setIsAlarmSounding(true);
-            await triggerLocalSOSAlarm();
-            startVibration('sos');
-          }}
-        >
-          <Activity color="#dc2626" size={24} />
-          <Text style={styles.sosTestButtonText}>SOS Сэрүүлэг Турших (Local)</Text>
-        </TouchableOpacity>
+        <View style={{ height: 40 }} />
 
-        {/* SYSTEM DIAGNOSTIC PANEL */}
-        <View style={styles.debugPanel}>
-          <Text style={styles.debugTitle}>🛠 СИСТЕМ ОНОШИЛГОО</Text>
-
-          <TouchableOpacity 
-            style={[styles.testButton, { backgroundColor: '#7f1d1d', borderColor: '#ef4444', marginBottom: 15 }]} 
-            onPress={emergencyStopSiren}
+        {/* Info Banner */}
+        <View style={styles.bannerOuter}>
+          <LinearGradient
+            colors={['#e0f2fe', '#f0f9ff']}
+            style={styles.bannerInner}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
           >
-            <Shield color="#f87171" size={18} />
-            <Text style={[styles.testButtonText, { color: '#f87171' }]}>БҮХ ДУУГ ХҮЧЭЭР ЗОГСООХ</Text>
-          </TouchableOpacity>
-
-          <View style={styles.debugRow}>
-            <Text style={styles.debugLabel}>Миний Код:</Text>
-            <Text style={styles.debugValue}>{userData?.familyCode || '---'}</Text>
-          </View>
-          <View style={styles.debugRow}>
-            <Text style={styles.debugLabel}>Миний Токен:</Text>
-            <Text style={styles.debugValue} numberOfLines={1} ellipsizeMode="middle">
-              {selfToken}
-            </Text>
-          </View>
-          <View style={styles.debugRow}>
-            <Text style={styles.debugLabel}>Нэр/UID:</Text>
-            <Text style={styles.debugValue}>{userData?.name} / {user?.uid.substring(0,6)}</Text>
-          </View>
-          <View style={styles.debugRow}>
-            <Text style={styles.debugLabel}>Сүүлийн Event:</Text>
-          </View>
-          <Text style={styles.debugLog}>{lastEvent}</Text>
+            <View style={styles.bannerIconBox}>
+              <Shield color="#0052cc" size={24} />
+            </View>
+            <View style={styles.bannerTextBox}>
+              <Text style={styles.bannerStatusLabel}>{t.familyStatus}</Text>
+              <Text style={styles.bannerTipText}>{t.tips[activeTipIndex].text}</Text>
+            </View>
+          </LinearGradient>
         </View>
-
-        <View style={{height: 40}} />
 
         {/* Bottom Section */}
         <View style={styles.bottomSection}>
           <View style={styles.awardsContainer}>
-            <Text style={styles.sectionTitle}>FAMILY AWARDS</Text>
+            <Text style={styles.sectionTitle}>{t.familyAwards}</Text>
             <View style={styles.awardsRow}>
-              <View style={styles.awardItem}>
-                <View style={styles.goldAwardIcon}>
-                  <Text style={styles.awardIconText}>1st</Text>
-                </View>
-                <Text style={styles.awardTextBadge}>MONTHLY HERO</Text>
+              <View style={styles.pointsBadge}>
+                <Text style={styles.pointsNumber}>{userPoints}</Text>
+                <Text style={styles.pointsText}>{t.points}</Text>
               </View>
-              <View style={styles.awardItem}>
-                <View style={styles.goldAwardIcon}>
-                  <User color="#856404" size={20} />
+              <View style={styles.starsContainer}>
+                <View style={{flexDirection: 'row', marginBottom: 2}}>
+                  {renderStars()}
                 </View>
-                <Text style={styles.awardTextBadge}>RESPONSIBLE FATHER</Text>
+                {nextTarget > 0 ? (
+                  <Text style={styles.nextLevelText}>{t.nextLevel}: {nextTarget - userPoints}</Text>
+                ) : (
+                  <Text style={styles.nextLevelText}>MAX LEVEL!</Text>
+                )}
               </View>
             </View>
           </View>
 
           <View style={styles.progressContainer}>
-            <Text style={styles.sectionTitleRight}>Daily Check-in: {checkinsCount}/2</Text>
+            <Text style={styles.sectionTitleRight}>{t.dailyCheckin}: {checkinsCount}/2</Text>
             <View style={styles.progressIcons}>
               <View style={[styles.progressShield, checkinsCount >= 1 ? styles.progressShieldActive : styles.progressShieldInactive]}>
                 {checkinsCount >= 1 && <Text style={styles.shieldCheck}>✓</Text>}
@@ -844,26 +843,20 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
   },
-  bellContainer: {
-    position: 'relative',
-  },
-  notificationBadge: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    backgroundColor: '#ff4444',
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+  languageToggle: {
+    backgroundColor: '#fff',
+    borderColor: '#0052cc',
+    borderWidth: 1.5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'white',
   },
-  notificationText: {
-    color: 'white',
-    fontSize: 10,
+  languageToggleText: {
+    color: '#0052cc',
     fontWeight: 'bold',
+    fontSize: 14,
   },
   safeButtonOuter: {
     width: '100%',
@@ -885,10 +878,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   safeTitle: {
-    fontSize: 38,
+    fontSize: 26,
     fontWeight: '900',
     color: 'white',
-    letterSpacing: 2,
+    letterSpacing: 1,
+    textAlign: 'center',
   },
   safeSubtitle: {
     fontSize: 14,
@@ -915,10 +909,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sosTitle: {
-    fontSize: 42,
+    fontSize: 26,
     fontWeight: '900',
     color: 'white',
-    letterSpacing: 2,
+    letterSpacing: 1,
+    textAlign: 'center',
   },
   sosHoldText: {
     fontSize: 12,
@@ -931,7 +926,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.9)',
   },
   fakeCallOuter: {
-    width: '50%',
+    alignSelf: 'center',
     height: 50,
     borderRadius: 25,
     backgroundColor: '#f4f9d0',
@@ -945,6 +940,7 @@ const styles = StyleSheet.create({
   },
   fakeCallInner: {
     flex: 1,
+    paddingHorizontal: 24,
     borderRadius: 21,
     flexDirection: 'row',
     justifyContent: 'center',
@@ -960,7 +956,7 @@ const styles = StyleSheet.create({
     width: '100%',
     justifyContent: 'space-between',
     paddingHorizontal: 10,
-    marginBottom: 40,
+    marginBottom: 10,
   },
   emergencyItem: {
     alignItems: 'center',
@@ -1020,33 +1016,37 @@ const styles = StyleSheet.create({
   awardsRow: {
     flexDirection: 'row',
   },
-  awardItem: {
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  goldAwardIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#fef08a',
+  pointsBadge: {
+    backgroundColor: '#fff',
     borderWidth: 2,
     borderColor: '#eab308',
+    borderRadius: 16,
+    width: 60,
+    height: 60,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 4,
+    marginRight: 8,
   },
-  awardIconText: {
-    fontWeight: 'bold',
+  pointsNumber: {
+    fontSize: 20,
+    fontWeight: '900',
     color: '#856404',
   },
-  awardTextBadge: {
-    backgroundColor: '#fef08a',
-    fontSize: 8,
+  pointsText: {
+    fontSize: 10,
     fontWeight: 'bold',
     color: '#856404',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    marginTop: -2,
+  },
+  starsContainer: {
+    justifyContent: 'center',
+    flex: 1,
+  },
+  nextLevelText: {
+    fontSize: 10,
+    color: '#64748b',
+    fontWeight: 'bold',
+    marginLeft: 4,
   },
   progressContainer: {
     flex: 1,

@@ -170,7 +170,7 @@ const sendPushNotification = async (expoPushTokens: string[], title: string, bod
   for (const token of expoPushTokens) {
     const message = {
       to: token,
-      sound: 'default',
+      sound: extraData?.type === 'sos' ? 'sos_siren.wav' : 'default',
       title,
       body,
       data: extraData,

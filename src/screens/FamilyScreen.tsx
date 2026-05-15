@@ -5,10 +5,12 @@ import { useNavigation } from '@react-navigation/native';
 import { ArrowLeft, User, MapPin } from 'lucide-react-native';
 import firestore from '@react-native-firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import { translations } from '../utils/translations';
 
 export default function FamilyScreen() {
   const navigation = useNavigation();
-  const { userData, user: currentUser } = useAuth();
+  const { userData, user: currentUser, language } = useAuth();
+  const t = translations[language];
   
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,8 +47,8 @@ export default function FamilyScreen() {
   const handleViewLocation = (member: any) => {
     if (!member.lastLocation) {
       Alert.alert(
-        "Байршил харагдахгүй байна",
-        "Тус гишүүн одоогоор байршлаа шинэчлээгүй байна. (SOS эсвэл SAFE товч дараагүй байна)"
+        t.noLocation,
+        t.noLocationMsg
       );
       return;
     }
@@ -64,11 +66,11 @@ export default function FamilyScreen() {
       const diffMs = now.getTime() - date.getTime();
       const diffMins = Math.floor(diffMs / 60000);
 
-      if (diffMins < 1) return 'Саяхан';
-      if (diffMins < 60) return `${diffMins} минутын өмнө`;
+      if (diffMins < 1) return t.justNowLower;
+      if (diffMins < 60) return `${diffMins} ${t.minsAgo}`;
       
       const diffHours = Math.floor(diffMins / 60);
-      if (diffHours < 24) return `${diffHours} цагийн өмнө`;
+      if (diffHours < 24) return `${diffHours} ${t.hoursAgo}`;
       
       return date.toLocaleDateString();
     } catch (e) {
@@ -86,11 +88,11 @@ export default function FamilyScreen() {
         </View>
         <View style={styles.infoContainer}>
           <Text style={styles.nameText}>
-            {item.name || 'Нэргүй'} {isMe && <Text style={styles.meBadge}>(Та)</Text>}
+            {item.name || t.unknownName} {isMe && <Text style={styles.meBadge}>({t.you})</Text>}
           </Text>
-          <Text style={styles.statusText}>{item.status || 'Гишүүн'}</Text>
+          <Text style={styles.statusText}>{item.status || t.member}</Text>
           {item.locationTimestamp && (
-            <Text style={styles.lastSeenText}>Сүүлд харагдсан: {formatLastSeen(item.locationTimestamp)}</Text>
+            <Text style={styles.lastSeenText}>{t.lastSeen}: {formatLastSeen(item.locationTimestamp)}</Text>
           )}
         </View>
 
@@ -100,7 +102,7 @@ export default function FamilyScreen() {
             onPress={() => handleViewLocation(item)}
           >
             <MapPin color={item.lastLocation ? "#0052cc" : "#94a3b8"} size={24} />
-            <Text style={[styles.locationBtnText, !item.lastLocation && styles.disabledText]}>Байршил</Text>
+            <Text style={[styles.locationBtnText, !item.lastLocation && styles.disabledText]}>{t.location}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -113,7 +115,7 @@ export default function FamilyScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <ArrowLeft color="#1a365d" size={24} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Гэр бүлийн гишүүд</Text>
+        <Text style={styles.headerTitle}>{t.familyMembersHead}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -123,7 +125,7 @@ export default function FamilyScreen() {
         </View>
       ) : members.length === 0 ? (
         <View style={styles.centerContainer}>
-          <Text style={styles.emptyText}>Гэр бүлийн гишүүд олдсонгүй.</Text>
+          <Text style={styles.emptyText}>{t.noMembers}</Text>
         </View>
       ) : (
         <FlatList

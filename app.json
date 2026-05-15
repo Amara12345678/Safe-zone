@@ -43,7 +43,9 @@
       [
         "expo-notifications",
         {
-          "sounds": ["./assets/sounds/sos_siren.wav"]
+          "sounds": [
+            "./assets/sounds/sos_siren.wav"
+          ]
         }
       ],
       [
@@ -67,7 +69,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "71876d06-f4b0-471b-ab1b-026a01865add"
+        "projectId": "cf91fdee-cb8e-4c0c-b8c5-26df585909e5"
       }
     }
   }

@@ -4,12 +4,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Eye, EyeOff } from 'lucide-react-native';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from '@react-native-firebase/auth';
 import { createUserProfile } from '../services/userService';
+import { useAuth } from '../context/AuthContext';
+import { translations } from '../utils/translations';
 
 export default function LoginScreen({ navigation }: any) {
+  const { language, setLanguage } = useAuth();
+  const t = translations[language];
+
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [status, setStatus] = useState('Сонгох');
+  const [status, setStatus] = useState('');
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -19,20 +24,20 @@ export default function LoginScreen({ navigation }: any) {
 
   async function handleAuth() {
     if (phoneNumber.length !== 8) {
-      Alert.alert('Алдаа', 'Утасны дугаараа 8 оронтойгоор зөв оруулна уу.');
+      Alert.alert(t.error, t.enterPhone);
       return;
     }
     if (password.length < 6) {
-      Alert.alert('Алдаа', 'Нууц үг доод тал нь 6 тэмдэгт байх ёстой.');
+      Alert.alert(t.error, t.passwordHint);
       return;
     }
     if (isRegistering) {
       if (name.trim().length === 0) {
-        Alert.alert('Алдаа', 'Нэрээ оруулна уу.');
+        Alert.alert(t.error, t.enterName);
         return;
       }
-      if (status === 'Сонгох') {
-        Alert.alert('Алдаа', 'Гэр бүлийн статусаа сонгоно уу.');
+      if (!status) {
+        Alert.alert(t.error, t.selectStatus);
         return;
       }
     }
@@ -45,17 +50,17 @@ export default function LoginScreen({ navigation }: any) {
       
       if (isRegistering) {
         const userCredential = await createUserWithEmailAndPassword(auth, fakeEmail, password);
-        await createUserProfile(userCredential.user.uid, phoneNumber, name.trim(), status);
+        await createUserProfile(userCredential.user.uid, phoneNumber, name.trim(), status || t.member);
       } else {
         await signInWithEmailAndPassword(auth, fakeEmail, password);
       }
     } catch (error: any) {
       if (error.code === 'auth/email-already-in-use') {
-        Alert.alert('Алдаа', 'Энэ дугаар аль хэдийн бүртгэлтэй байна. Нэвтрэх хэсгийг сонгоно уу.');
+        Alert.alert(t.error, 'Энэ дугаар аль хэдийн бүртгэлтэй байна. Нэвтрэх хэсгийг сонгоно уу.');
       } else if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-        Alert.alert('Алдаа', 'Дугаар эсвэл нууц үг буруу байна.');
+        Alert.alert(t.error, 'Дугаар эсвэл нууц үг буруу байна.');
       } else {
-        Alert.alert('Алдаа', error.message || 'Сэрвэртэй холбогдоход алдаа гарлаа.');
+        Alert.alert(t.error, error.message || 'Сэрвэртэй холбогдоход алдаа гарлаа.');
       }
     } finally {
       setLoading(false);
@@ -65,16 +70,23 @@ export default function LoginScreen({ navigation }: any) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.title}>SAFEZONE</Text>
-        <Text style={styles.subtitle}>Welcome to SafeSignal</Text>
+        <TouchableOpacity 
+          style={styles.languageToggle} 
+          onPress={() => setLanguage(prev => prev === 'MN' ? 'EN' : 'MN')}
+        >
+          <Text style={styles.languageToggleText}>{language === 'MN' ? 'EN' : 'MN'}</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.title}>SAFESIGNAL</Text>
+        <Text style={styles.subtitle}>{t.welcome}</Text>
         
         <View style={styles.formContainer}>
-          <Text style={styles.inputLabel}>Утасны дугаар</Text>
+          <Text style={styles.inputLabel}>{t.phoneNumber}</Text>
           <View style={styles.phoneInputContainer}>
             <Text style={styles.prefix}>+976</Text>
             <TextInput
               style={[styles.input, styles.phoneInput]}
-              placeholder="8811xxxx"
+              placeholder={t.phonePlaceholder}
               keyboardType="phone-pad"
               maxLength={8}
               value={phoneNumber}
@@ -82,37 +94,37 @@ export default function LoginScreen({ navigation }: any) {
               editable={!loading}
             />
           </View>
-          <Text style={styles.helperText}>Утасны дугаараа 8 оронтой оруулна уу.</Text>
+          <Text style={styles.helperText}>{t.enterPhone}</Text>
           
           {isRegistering && (
             <>
-              <Text style={styles.inputLabel}>Таны нэр</Text>
+              <Text style={styles.inputLabel}>{t.yourName}</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Жишээ: Болд"
+                placeholder={t.namePlaceholder}
                 placeholderTextColor="#cbd5e1"
                 value={name}
                 onChangeText={setName}
                 editable={!loading}
               />
-              <Text style={styles.inputLabel}>Гэр бүлийн статус</Text>
+              <Text style={styles.inputLabel}>{t.familyStatusField}</Text>
               <TouchableOpacity 
                 style={styles.input}
                 onPress={() => !loading && setShowStatusModal(true)}
               >
-                <Text style={{color: status === 'Сонгох' ? '#cbd5e1' : '#0f172a', fontSize: 16}}>
-                  {status}
+                <Text style={{color: !status ? '#cbd5e1' : '#0f172a', fontSize: 16}}>
+                  {status || t.statusSelect}
                 </Text>
               </TouchableOpacity>
-              <Text style={styles.helperText}>Гэр бүлийн бүлэгт харагдах таны үүрэг (Аав, Ээж г.м)</Text>
+              <Text style={styles.helperText}>{t.familyStatusHint}</Text>
             </>
           )}
 
-          <Text style={styles.inputLabel}>Нууц үг</Text>
+          <Text style={styles.inputLabel}>{t.password}</Text>
           <View style={styles.passwordContainer}>
             <TextInput
               style={styles.bareInput}
-              placeholder="Нууц үг үүсгэх/бичих"
+              placeholder={t.createPassword}
               placeholderTextColor="#cbd5e1"
               secureTextEntry={!showPassword}
               value={password}
@@ -126,14 +138,14 @@ export default function LoginScreen({ navigation }: any) {
               {showPassword ? <EyeOff color="#64748b" size={24} /> : <Eye color="#64748b" size={24} />}
             </TouchableOpacity>
           </View>
-          <Text style={styles.helperText}>Нууц үг доод тал нь 6 тэмдэгт байх ёстой.</Text>
+          <Text style={styles.helperText}>{t.passwordHint}</Text>
 
           <TouchableOpacity 
             style={styles.primaryButton}
             onPress={handleAuth}
             disabled={loading || phoneNumber.length !== 8 || password.length < 6}
           >
-            {loading ? <ActivityIndicator color="white" /> : <Text style={styles.primaryButtonText}>{isRegistering ? "Бүртгүүлэх" : "Нэвтрэх"}</Text>}
+            {loading ? <ActivityIndicator color="white" /> : <Text style={styles.primaryButtonText}>{isRegistering ? t.register : t.login}</Text>}
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -141,16 +153,15 @@ export default function LoginScreen({ navigation }: any) {
             onPress={() => setIsRegistering(!isRegistering)}
           >
             <Text style={{color: '#0052cc', fontWeight: 'bold', fontSize: 16}}>
-              {isRegistering ? "Бүртгэлтэй юу? Энд дарж нэвтэрнэ үү." : "Шинээр бүртгүүлэх үү? Энд дарна уу."}
+              {isRegistering ? t.switchToLogin : t.switchToRegister}
             </Text>
           </TouchableOpacity>
-
         </View>
         
         <Modal visible={showStatusModal} transparent={true} animationType="fade">
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Статус сонгох</Text>
+              <Text style={styles.modalTitle}>{t.chooseStatus}</Text>
               <ScrollView style={{width: '100%', maxHeight: 300}}>
                 {statuses.map((s, idx) => (
                   <TouchableOpacity 
@@ -166,7 +177,7 @@ export default function LoginScreen({ navigation }: any) {
                 ))}
               </ScrollView>
               <TouchableOpacity onPress={() => setShowStatusModal(false)} style={{marginTop: 15}}>
-                <Text style={{color: '#ef4444', fontWeight: 'bold', fontSize: 16}}>Хаах</Text>
+                <Text style={{color: '#ef4444', fontWeight: 'bold', fontSize: 16}}>{t.close}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -326,5 +337,24 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 18,
     color: '#334155'
-  }
+  },
+  languageToggle: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    backgroundColor: '#fff',
+    borderColor: '#0052cc',
+    borderWidth: 1.5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  languageToggleText: {
+    color: '#0052cc',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
 });
